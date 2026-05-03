@@ -32,10 +32,10 @@ export const authRoute = new Elysia({ prefix: '/auth' })
         const user = await LoginUsers(body)
 
         const token = await jwt.sign({
-          id    : user.id,
-          name  : user.name,
-          email : user.email,
-          role  : user.role,
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
         })
 
         return successResponse({ token, user }, 'Login berhasil')
@@ -61,9 +61,3 @@ export const authRoute = new Elysia({ prefix: '/auth' })
       }
     }
   )
-  .onError(({ code, error, set }) => {
-    if (code === 'VALIDATION') {
-      set.status = 400
-      return errorResponse(error.message)
-    }
-  })
