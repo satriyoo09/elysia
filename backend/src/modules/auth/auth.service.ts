@@ -1,60 +1,111 @@
 import { db } from "../../db";
-import { users } from "../../db/schema";
-import { eq } from "drizzle-orm";
+import { users, profile } from "../../db/schema";
+import { eq, or } from "drizzle-orm";
 import { hashPassword, veryfyPassword } from "../../utils/hash";
 
 export const RegisterUsers = async (data: {
     name: string;
+    username: string;
     email: string;
     password: string;
 }) => {
-    const exixting = await db
+    const existing = await db
         .select()
         .from(users)
         .where(eq(users.email, data.email));
 
-    if (exixting.length > 0) {
+    if (existing.length > 0) {
         throw new Error("Email sudah terdaftar");
-    } 
-    const hashed = await hashPassword(data.password)
-    const [newUser] = await db 
+    }
+
+    const hashed = await hashPassword(data.password);
+
+    const [newUser] = await db
         .insert(users)
         .values({
             name: data.name,
+            username: data.username,
             email: data.email,
             password: hashed,
-            role: "USER"
+            role: "USER",
         })
         .returning({
             id: users.id,
             name: users.name,
+            username: users.username,
             email: users.email,
-            role: users.role
-        })
-    return newUser
-}
+            role: users.role,
+        });
+
+    // Auto-create an empty profile for the new user
+    await db.insert(profile).values({
+        userId: newUser.id,
+    });
+
+    return newUser;
+};
+
 export const LoginUsers = async (data: {
-    email: string
-    password: string
+    email: string; // This can be email or username
+    password: string;
 }) => {
-    const [User] = await db
+    const [user] = await db
         .select()
         .from(users)
-        .where(eq(users.email, data.email))
-        .limit(1)
+        .where(
+            or(
+                eq(users.email, data.email),
+                eq(users.username, data.email)
+            )
+        )
+        .limit(1);
 
-    if (!User) {
-        throw new Error("Email tidak ditemukan")
+    if (!user) {
+        throw new Error("Akun tidak ditemukan");
     }
-    const isValid = await veryfyPassword(data.password, User.password)
+
+    const isValid = await veryfyPassword(data.password, user.password);
 
     if (!isValid) {
-        throw new Error("Password salah")
+        throw new Error("Password salah");
     }
+
     return {
-        id: User.id,
-        name: User.name,
-        email: User.email,
-        role: User.role
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+    };
+};
+
+export const GetCurrentUser = async (userId: string) => {
+    const [user] = await db
+        .select({
+            id: users.id,
+            name: users.name,
+            email: users.email,
+            role: users.role,
+            avatar: users.avatar,
+            createdAt: users.createdAt,
+        })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+    if (!user) {
+        throw new Error("User tidak ditemukan");
     }
-}
+
+    // Fetch the user's profile
+    const [userProfile] = await db
+        .select()
+        .from(profile)
+        .where(eq(profile.userId, userId))
+        .limit(1);
+
+    return {
+        ...user,
+        profile: userProfile || null,
+    };
+};
